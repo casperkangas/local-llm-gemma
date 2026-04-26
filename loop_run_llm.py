@@ -13,7 +13,7 @@ prompt_cache = make_prompt_cache(model, max_kv_size=8192)
 # 3. Initialize the chat history
 # We start with a "system" prompt to tell the AI how to behave
 messages = [
-    {"role": "system", "content": "You are an expert Python coding assistant."}
+    {"role": "system", "content": "You are an expert coding assistant. Don't waste tokens on pleasantries. Provide concise, accurate code answers to the user's questions."}
 ]
 
 print("\n--- Chatbot initialized! Type 'quit' or 'exit' to stop. ---\n")
@@ -37,17 +37,19 @@ while True:
     print("\nAI: ", end="", flush=True)
     
     # 5. Stream the response
-    # We use stream_generate to print the text letter-by-letter
     full_response = ""
     for response in stream_generate(
         model, 
         tokenizer, 
         formatted_prompt, 
-        max_tokens=2000, # Increased limit for longer code outputs
+        max_tokens=2000,
         prompt_cache=prompt_cache
     ):
-        print(response.text, end="", flush=True)
-        full_response += response.text
+        # Intercept and remove the stop token before printing
+        clean_text = response.text.replace("<|im_end|>", "")
+        
+        print(clean_text, end="", flush=True)
+        full_response += clean_text
         
     print("\n") # Add a blank line when the AI finishes speaking
     
