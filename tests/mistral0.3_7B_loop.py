@@ -3,8 +3,8 @@ from mlx_lm.models.cache import make_prompt_cache
 import mlx.core as mx
 
 # 1. Load the model
-print("Loading Qwen 2.5 Coder into memory...")
-model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+print("Loading model into memory...")
+model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.3-4bit")
 
 # 2. Setup the cache for memory management
 # Increased to 8192 to allow for a longer continuous chat history
@@ -13,7 +13,7 @@ prompt_cache = make_prompt_cache(model, max_kv_size=8192)
 # 3. Initialize the chat history
 # We start with a "system" prompt to tell the AI how to behave
 messages = [
-    {"role": "system", "content": "You are an expert coding assistant. Don't waste tokens on pleasantries. Provide concise, accurate code answers to the user's questions."}
+    {"role": "system", "content": "Your name is Casper. You are a highly intelligent AI tutor. The user you are talking to is named Julianna. Always be encouraging, helpful, and clear when helping her with her schoolwork, but don't give false information and make sure everything is correct. If you don't know the answer to something, say you don't know but offer to help her find the answer."}
 ]
 
 print("\n--- Chatbot initialized! Type 'quit' or 'exit' to stop. ---\n")

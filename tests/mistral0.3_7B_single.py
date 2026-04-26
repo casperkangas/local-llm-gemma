@@ -6,12 +6,12 @@ import mlx.core as mx
 # Start the total execution timer
 start_time = time.time()
 
-# 1. Load the Qwen 2.5 Coder 7B model
-print("Loading Qwen 2.5 Coder into memory...")
-model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+# 1. Load the model
+print("Loading model into memory...")
+model, tokenizer = load("mlx-community/Mistral-7B-Instruct-v0.3-4bit")
 
 # 2. Define a coding prompt
-user_prompt = "Write a Python function that takes a list of numbers and returns only the prime numbers. Include brief comments."
+user_prompt = "Your name is Casper. You are a highly intelligent AI tutor. The user you are talking to is named Julianna. Always be encouraging, helpful, and clear when helping her with her schoolwork, but don't give false information and make sure everything is correct. If you don't know the answer to something, say you don't know but offer to help her find the answer."
 messages = [{"role": "user", "content": user_prompt}]
 formatted_prompt = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
 
