@@ -3,6 +3,7 @@ from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
 import mlx.core as mx
 import gc
+import copy
 
 # 1. Page Configuration
 st.set_page_config(page_title="Local Mac LLM", page_icon="🤖")
@@ -77,13 +78,7 @@ elif st.session_state.app_stage == "chat":
     # 6. Initialize Chat Memory (Only happens once per session)
     if "messages" not in st.session_state:
         st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
-        
-        if config["system_prompt"] is None:
-            st.session_state.messages = [] 
-        else:
-            st.session_state.messages = [
-                {"role": "system", "content": config["system_prompt"]}
-            ]
+        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
 
     # 7. Display the Conversation History
     for msg in st.session_state.messages:
@@ -99,7 +94,19 @@ elif st.session_state.app_stage == "chat":
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
-            formatted_prompt = tokenizer.apply_chat_template(st.session_state.messages, add_generation_prompt=True)
+            
+            # --- THE MISTRAL INTERCEPTOR ---
+            # Create a "deep copy" so our temporary changes don't accidentally alter the UI memory
+            ai_memory = copy.deepcopy(st.session_state.messages)
+            
+            # If Mistral is active, and the first message is a system prompt, merge it into the user prompt
+            if "Mistral" in selected_model_name and ai_memory[0]["role"] == "system" and len(ai_memory) > 1:
+                sys_prompt = ai_memory.pop(0)["content"]
+                ai_memory[0]["content"] = f"System Instructions: {sys_prompt}\n\nUser Message: {ai_memory[0]['content']}"
+            # -------------------------------
+            
+            # Pass our modified ai_memory to the tokenizer instead of st.session_state.messages
+            formatted_prompt = tokenizer.apply_chat_template(ai_memory, add_generation_prompt=True)
             
             def stream_parser():
                 for response in stream_generate(
