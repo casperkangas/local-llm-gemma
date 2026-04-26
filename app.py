@@ -6,55 +6,67 @@ import mlx.core as mx
 # 1. Page Configuration
 st.set_page_config(page_title="Local Mac LLM", page_icon="🤖")
 
+# 2. Define Your Model Library (The Menu)
 AVAILABLE_MODELS = {
-    "Qwen 2.5 Coder (7B)": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-    "Gemma 2 (2B)": "mlx-community/gemma-2-2b-it-4bit"
+    "Qwen 2.5 Coder (7B)": {
+        "repo_id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        "system_prompt": "You are Qwen, a highly advanced local AI coding assistant. You only provide clean, well-documented code."
+    },
+    "Gemma 2 (2B)": {
+        "repo_id": "mlx-community/gemma-2-2b-it-4bit",
+        "system_prompt": None  # Gemma does not support system roles
+    }
 }
 
+# 3. The Sidebar UI
 st.sidebar.title("⚙️ Model Settings")
 selected_model_name = st.sidebar.selectbox("Choose an AI:", list(AVAILABLE_MODELS.keys()))
-selected_repo_id = AVAILABLE_MODELS[selected_model_name]
+
+# --- THE FIX IS HERE ---
+# We grab the dictionary for the selected model, then extract the specific pieces
+selected_config = AVAILABLE_MODELS[selected_model_name]
+selected_repo_id = selected_config["repo_id"]
+selected_system_prompt = selected_config["system_prompt"]
+# -----------------------
 
 st.title(f"💻 Chatting with {selected_model_name.split(' ')[0]}")
 
-# 2. Dynamic Model Loading
+# 4. Dynamic Model Loading
 @st.cache_resource(show_spinner="Loading model into Mac RAM...")
 def get_model(repo_id):
     print(f"\n[System] Loading {repo_id}...")
     return load(repo_id)
 
-# 3. Safe Context Switching & Memory Management
+# 5. Safe Context Switching & Memory Management
 if "current_model_id" not in st.session_state or st.session_state.current_model_id != selected_repo_id:
-    # FIX 1: Destroy Streamlit's cache IMMEDIATELY to drop the old model from RAM
     st.cache_resource.clear()
-    
     st.session_state.current_model_id = selected_repo_id
     
-    # FIX 2: Handle strict template rules. Gemma crashes if given a "system" role.
-    if "Gemma" in selected_model_name:
-        st.session_state.messages = [] # Gemma must start with a user message
+    # --- SECOND PART OF THE FIX ---
+    # We use the custom system prompt we pulled from the dictionary above!
+    if selected_system_prompt is None:
+        st.session_state.messages = [] # Gemma
     else:
         st.session_state.messages = [
-            {"role": "system", "content": "You are a helpful local AI assistant running on a Mac."}
+            {"role": "system", "content": selected_system_prompt}
         ]
+    # ------------------------------
     
-    # CRITICAL: We load the model AFTER clearing the cache, otherwise we instantly delete what we just loaded
     model, tokenizer = get_model(selected_repo_id)
     st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
     
     mx.clear_cache()
     print("[System] Switched models. Old memory wiped completely.")
 else:
-    # If the dropdown hasn't changed, just grab the active model normally
     model, tokenizer = get_model(selected_repo_id)
 
-# 4. Display the Conversation History
+# 6. Display the Conversation History
 for msg in st.session_state.messages:
     if msg["role"] != "system":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-# 5. The Chat Input Box & Generation
+# 7. The Chat Input Box & Generation
 if user_input := st.chat_input(f"Message {selected_model_name}..."):
     
     st.session_state.messages.append({"role": "user", "content": user_input})
