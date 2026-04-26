@@ -52,9 +52,22 @@ elif st.session_state.app_stage == "chat":
     selected_model_name = st.session_state.selected_model_name
     config = st.session_state.config
     
-    # 4. Safe Sidebar Controls
+    # 1. Model Loading Engine
+    @st.cache_resource(show_spinner="Loading model into Mac RAM... This takes a few seconds.")
+    def get_model(repo_id):
+        return load(repo_id)
+
+    model, tokenizer = get_model(config["repo_id"])
+    
+    # 2. Safe Sidebar Controls
     st.sidebar.title("⚙️ Session Info")
     st.sidebar.success(f"**Active AI:**\n{selected_model_name}")
+    
+    # OPTIMIZATION: Instant Chat Reset
+    if st.sidebar.button("🧹 Clear Chat History"):
+        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+        st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
+        st.rerun()
     
     # A safe kill-switch that completely wipes the memory and sends you back to Stage 1
     if st.sidebar.button("🛑 End Session & Choose New AI"):
@@ -68,25 +81,18 @@ elif st.session_state.app_stage == "chat":
 
     st.title(f"💻 Chatting with {selected_model_name.split(' ')[0]}")
 
-    # 5. Model Loading Engine
-    @st.cache_resource(show_spinner="Loading model into Mac RAM... This takes a few seconds.")
-    def get_model(repo_id):
-        return load(repo_id)
-
-    model, tokenizer = get_model(config["repo_id"])
-
-    # 6. Initialize Chat Memory (Only happens once per session)
+    # 3. Initialize Chat Memory (Only happens once per session)
     if "messages" not in st.session_state:
         st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
 
-    # 7. Display the Conversation History
+    # 4. Display the Conversation History
     for msg in st.session_state.messages:
         if msg["role"] != "system":
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # 8. The Chat Input Box & Generation
+    # 5. The Chat Input Box & Generation
     if user_input := st.chat_input("Type your message..."):
         
         st.session_state.messages.append({"role": "user", "content": user_input})
