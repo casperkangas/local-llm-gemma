@@ -3,7 +3,6 @@ from mlx_lm import load, stream_generate
 from mlx_lm.models.cache import make_prompt_cache
 import mlx.core as mx
 import gc
-import copy
 
 # 1. Page Configuration
 st.set_page_config(page_title="Local Mac LLM", page_icon="🤖")
@@ -16,10 +15,6 @@ AVAILABLE_MODELS = {
     },
     "Scholar Qwen (7B)": {
         "repo_id": "mlx-community/Qwen2.5-7B-Instruct-4bit",
-        "system_prompt": "Your name is Casper. You are a highly intelligent AI tutor. The user you are talking to is named Julianna. Always be encouraging, helpful, and clear when helping her with her schoolwork, but don't give false information and make sure everything is correct. If you don't know the answer to something, say you don't know but offer to help her find the answer."
-    },
-    "Scholar Mistral (7B)": {
-        "repo_id": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
         "system_prompt": "Your name is Casper. You are a highly intelligent AI tutor. The user you are talking to is named Julianna. Always be encouraging, helpful, and clear when helping her with her schoolwork, but don't give false information and make sure everything is correct. If you don't know the answer to something, say you don't know but offer to help her find the answer."
     }
 }
@@ -101,18 +96,10 @@ elif st.session_state.app_stage == "chat":
 
         with st.chat_message("assistant"):
             
-            # --- THE MISTRAL INTERCEPTOR ---
-            # Create a "deep copy" so our temporary changes don't accidentally alter the UI memory
-            ai_memory = copy.deepcopy(st.session_state.messages)
-            
-            # If Mistral is active, and the first message is a system prompt, merge it into the user prompt
-            if "Mistral" in selected_model_name and ai_memory[0]["role"] == "system" and len(ai_memory) > 1:
-                sys_prompt = ai_memory.pop(0)["content"]
-                ai_memory[0]["content"] = f"System Instructions: {sys_prompt}\n\nUser Message: {ai_memory[0]['content']}"
-            # -------------------------------
-            
-            # Pass our modified ai_memory to the tokenizer instead of st.session_state.messages
-            formatted_prompt = tokenizer.apply_chat_template(ai_memory, add_generation_prompt=True)
+            formatted_prompt = tokenizer.apply_chat_template(
+                st.session_state.messages, 
+                add_generation_prompt=True
+            )
             
             def stream_parser():
                 for response in stream_generate(
