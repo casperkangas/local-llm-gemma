@@ -17,7 +17,19 @@ AVAILABLE_MODELS = {
     "Scholar Qwen (7B)": {
         "repo_id": "mlx-community/Qwen2.5-7B-Instruct-4bit",
         "system_prompt": "Your name is Casper. You are a highly intelligent AI tutor. The user you are talking to is named Julianna. Always be encouraging, helpful, and clear when helping her with her schoolwork, but don't give false information and make sure everything is correct. If you don't know the answer to something, say you don't know but offer to help her find the answer."
-    }
+    },
+    "WIP WIP WIP Coder Qwen (14B)": {
+        "repo_id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
+        "system_prompt": "Your name is Goofy. You are a highly advanced AI coding assistant. You only provide clean, well-documented code."
+    },
+    "Gemma (9B)": {
+        "repo_id": "mlx-community/gemma-2-9b-it-4bit",
+        "system_prompt": None
+    },
+    "Mistral (12B)": {
+        "repo_id": "mlx-community/Mistral-Nemo-Instruct-2407-4bit",
+        "system_prompt": "Your name is Goofy. You are a highly advanced AI coding assistant. You only provide clean, well-documented code."
+    },
 }
 
 # 3. App Routing (Determine which screen to show)
@@ -34,11 +46,21 @@ if st.session_state.app_stage == "setup":
     selected_model_name = st.selectbox("Available Models:", list(AVAILABLE_MODELS.keys()))
     
     if st.button("Launch Assistant", type="primary"):
-        # Save the selection to memory and move to the chat stage
         st.session_state.selected_model_name = selected_model_name
         st.session_state.config = AVAILABLE_MODELS[selected_model_name]
+        
+        # 1. Wipe old memory and set up the new system prompt
+        if st.session_state.config["system_prompt"] is not None:
+            st.session_state.messages = [{"role": "system", "content": st.session_state.config["system_prompt"]}]
+        else:
+            st.session_state.messages = []
+            
+        # 2. Reset the token counter to 0
+        st.session_state.total_tokens = 0
+        # -------------------------------
+        
         st.session_state.app_stage = "chat"
-        st.rerun() # Forces the app to refresh and load Stage 2
+        st.rerun()
 
 # ==========================================
 # STAGE 2: THE CHAT INTERFACE
@@ -54,25 +76,36 @@ elif st.session_state.app_stage == "chat":
     
     # 1. Model Loading Engine
     @st.cache_resource(show_spinner="Loading model into Mac RAM... This takes a few seconds.")
-    def get_model(repo_id):
-        return load(repo_id)
+    def get_model(repo_id, is_mistral):
+        # If it is Mistral, load it with the regex fix
+        if is_mistral:
+            return load(
+                repo_id, 
+                tokenizer_config={"fix_mistral_regex": True}
+            )
+        # If it is any other model (Llama, Qwen, Gemma), load it normally
+        else:
+            return load(repo_id)
 
-    model, tokenizer = get_model(config["repo_id"])
+    # We check the name of the selected model to see if "Mistral" is in it
+    check_if_mistral = "Mistral" in selected_model_name
     
-    # 3. Initialize Chat Memory & Context Counter
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+    # We pass both the repo link AND our True/False check into the function
+    model, tokenizer = get_model(config["repo_id"], check_if_mistral)
+    
+    # 3. Calculate System Tokens (Safely handled after tokenizer is loaded)
+    if st.session_state.total_tokens == 0 and config["system_prompt"] is not None:
         st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
 
     # --- Two-Tier Auto-Clear Safeguard ---
     if st.session_state.total_tokens >= HARD_LIMIT:
         st.error(f"🚨 Critical memory limit reached ({HARD_LIMIT} tokens). Chat auto-cleared to prevent Mac crash.")
-        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
-        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
+        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}] if config["system_prompt"] is not None else []
+        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"])) if config["system_prompt"] is not None else 0
     elif st.session_state.total_tokens >= SOFT_LIMIT:
         st.warning(f"⚠️ Memory warning ({st.session_state.total_tokens} / {HARD_LIMIT} tokens). The chat is getting long. Consider clearing history soon to maintain performance!")
         
-    # 2. Safe Sidebar Controls & Memory Monitor
+    # 3. Safe Sidebar Controls & Memory Monitor
     st.sidebar.title("⚙️ Session Info")
     st.sidebar.success(f"**Active AI:**\n{selected_model_name}")
     
@@ -93,9 +126,15 @@ elif st.session_state.app_stage == "chat":
     st.sidebar.write(status_text)
     st.sidebar.progress(usage_percent, text=f"Context: {st.session_state.total_tokens} / {HARD_LIMIT} tokens")
     
-    if st.sidebar.button("🧹 Clear Chat History"):
-        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
-        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
+    # --- Clear Chat Button ---
+    if st.sidebar.button("🗑️ Clear Chat History", type="secondary"):
+        if config["system_prompt"] is not None:
+            st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+            st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
+        else:
+            st.session_state.messages = []
+            st.session_state.total_tokens = 0
+            
         st.rerun()
     
     if st.sidebar.button("🛑 End Session & Choose New AI"):
@@ -110,7 +149,6 @@ elif st.session_state.app_stage == "chat":
     
     # --- Master Kill Switch ---
     if st.sidebar.button("🔌 Power Off Server (Close App)", type="primary"):
-        # 1. Flush the Mac's RAM first just to be safe
         st.cache_resource.clear()
         gc.collect()
         mx.clear_cache()
@@ -154,16 +192,15 @@ elif st.session_state.app_stage == "chat":
                         model, 
                         tokenizer, 
                         formatted_prompt, 
-                        max_tokens=2000
+                        max_tokens=5000
                     ):
-                        yield response.text.replace("<|im_end|>", "")
+                        yield response.text.replace("<|im_end|>", "").replace("<end_of_turn>", "")
                 except Exception as e:
                     st.error(f"Failed to generate response: {e}")
                     st.stop()
             
             full_response = st.write_stream(stream_parser())
             
-            # --- NEW: Calculate generated tokens and save them ---
             generated_tokens = len(tokenizer.encode(full_response))
             st.session_state.total_tokens += generated_tokens
             
