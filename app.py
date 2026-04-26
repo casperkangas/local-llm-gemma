@@ -1,8 +1,9 @@
 import streamlit as st
 from mlx_lm import load, stream_generate
-from mlx_lm.models.cache import make_prompt_cache
 import mlx.core as mx
 import gc
+import os
+import signal
 
 # 1. Page Configuration
 st.set_page_config(page_title="Local Mac LLM", page_icon="🤖")
@@ -47,7 +48,7 @@ elif st.session_state.app_stage == "chat":
     selected_model_name = st.session_state.selected_model_name
     config = st.session_state.config
     
-    # --- NEW: Two-Tier Memory Limits ---
+    # --- Two-Tier Memory Limits ---
     SOFT_LIMIT = 8192
     HARD_LIMIT = 16384
     
@@ -63,7 +64,7 @@ elif st.session_state.app_stage == "chat":
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
         st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
 
-    # --- NEW: Two-Tier Auto-Clear Safeguard ---
+    # --- Two-Tier Auto-Clear Safeguard ---
     if st.session_state.total_tokens >= HARD_LIMIT:
         st.error(f"🚨 Critical memory limit reached ({HARD_LIMIT} tokens). Chat auto-cleared to prevent Mac crash.")
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
@@ -75,7 +76,7 @@ elif st.session_state.app_stage == "chat":
     st.sidebar.title("⚙️ Session Info")
     st.sidebar.success(f"**Active AI:**\n{selected_model_name}")
     
-    # --- NEW: Visual Memory Monitor ---
+    # --- Visual Memory Monitor ---
     st.sidebar.markdown("### 📊 Memory Monitor")
     
     # Calculate percentage based on the Hard Limit (max 1.0 to avoid UI errors)
@@ -104,6 +105,19 @@ elif st.session_state.app_stage == "chat":
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
+        
+    st.sidebar.markdown("---") # Adds a clean visual divider line
+    
+    # --- Master Kill Switch ---
+    if st.sidebar.button("🔌 Power Off Server (Close App)", type="primary"):
+        # 1. Flush the Mac's RAM first just to be safe
+        st.cache_resource.clear()
+        gc.collect()
+        mx.clear_cache()
+        
+        # 2. Find this specific Streamlit process and kill it
+        current_process_id = os.getpid()
+        os.kill(current_process_id, signal.SIGTERM)
 
     st.title(f"💻 Chatting with {selected_model_name.split(' ')[0]}")
 
