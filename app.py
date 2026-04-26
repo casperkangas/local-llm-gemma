@@ -47,6 +47,9 @@ elif st.session_state.app_stage == "chat":
     selected_model_name = st.session_state.selected_model_name
     config = st.session_state.config
     
+    # --- NEW: Set a safe token limit for your Mac (e.g., 8192) ---
+    MAX_CONTEXT_TOKENS = 8192
+    
     # 1. Model Loading Engine
     @st.cache_resource(show_spinner="Loading model into Mac RAM... This takes a few seconds.")
     def get_model(repo_id):
@@ -54,39 +57,56 @@ elif st.session_state.app_stage == "chat":
 
     model, tokenizer = get_model(config["repo_id"])
     
-    # 2. Safe Sidebar Controls
+    # 3. Initialize Chat Memory & Context Counter
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
+
+    # --- NEW: Auto-Clear Safeguard ---
+    if st.session_state.total_tokens >= MAX_CONTEXT_TOKENS:
+        st.warning(f"⚠️ Memory limit reached ({MAX_CONTEXT_TOKENS} tokens). Clearing chat to prevent crashing.")
+        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
+
+    # 2. Safe Sidebar Controls & Memory Monitor
     st.sidebar.title("⚙️ Session Info")
     st.sidebar.success(f"**Active AI:**\n{selected_model_name}")
     
-    # OPTIMIZATION: Instant Chat Reset
+    # --- NEW: Visual Memory Monitor ---
+    st.sidebar.markdown("### 📊 Memory Monitor")
+    usage_percent = min(st.session_state.total_tokens / MAX_CONTEXT_TOKENS, 1.0)
+    st.sidebar.progress(usage_percent, text=f"Context: {st.session_state.total_tokens} / {MAX_CONTEXT_TOKENS} tokens")
+    
     if st.sidebar.button("🧹 Clear Chat History"):
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
+        st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
         st.rerun()
     
-    # A safe kill-switch that completely wipes the memory and sends you back to Stage 1
     if st.sidebar.button("🛑 End Session & Choose New AI"):
         st.cache_resource.clear()
         gc.collect()
         mx.clear_cache()
-        # Wipe all session variables
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
 
     st.title(f"💻 Chatting with {selected_model_name.split(' ')[0]}")
 
-    # 3. Initialize Chat Memory (Only happens once per session)
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
-
     # 4. Display the Conversation History
     for msg in st.session_state.messages:
         if msg["role"] != "system":
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                # --- NEW: Show token count under assistant messages ---
+                if msg["role"] == "assistant" and "token_count" in msg:
+                    st.caption(f"⚡ {msg['token_count']} tokens generated")
 
     # 5. The Chat Input Box & Generation
     if user_input := st.chat_input("Type your message..."):
+        
+        # Calculate user input tokens
+        user_tokens = len(tokenizer.encode(user_input))
+        st.session_state.total_tokens += user_tokens
         
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
@@ -109,5 +129,16 @@ elif st.session_state.app_stage == "chat":
                     yield response.text.replace("<|im_end|>", "")
             
             full_response = st.write_stream(stream_parser())
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            
+            # --- NEW: Calculate generated tokens and save them ---
+            generated_tokens = len(tokenizer.encode(full_response))
+            st.session_state.total_tokens += generated_tokens
+            
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": full_response,
+                "token_count": generated_tokens # Save this so we can display it later
+            })
+            
             mx.clear_cache()
+            st.rerun() # Refresh to update the sidebar progress bar
