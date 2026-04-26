@@ -47,8 +47,9 @@ elif st.session_state.app_stage == "chat":
     selected_model_name = st.session_state.selected_model_name
     config = st.session_state.config
     
-    # --- NEW: Set a safe token limit for your Mac (e.g., 8192) ---
-    MAX_CONTEXT_TOKENS = 8192
+    # --- NEW: Two-Tier Memory Limits ---
+    SOFT_LIMIT = 8192
+    HARD_LIMIT = 16384
     
     # 1. Model Loading Engine
     @st.cache_resource(show_spinner="Loading model into Mac RAM... This takes a few seconds.")
@@ -62,20 +63,34 @@ elif st.session_state.app_stage == "chat":
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
         st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
 
-    # --- NEW: Auto-Clear Safeguard ---
-    if st.session_state.total_tokens >= MAX_CONTEXT_TOKENS:
-        st.warning(f"⚠️ Memory limit reached ({MAX_CONTEXT_TOKENS} tokens). Clearing chat to prevent crashing.")
+    # --- NEW: Two-Tier Auto-Clear Safeguard ---
+    if st.session_state.total_tokens >= HARD_LIMIT:
+        st.error(f"🚨 Critical memory limit reached ({HARD_LIMIT} tokens). Chat auto-cleared to prevent Mac crash.")
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
         st.session_state.total_tokens = len(tokenizer.encode(config["system_prompt"]))
-
+    elif st.session_state.total_tokens >= SOFT_LIMIT:
+        st.warning(f"⚠️ Memory warning ({st.session_state.total_tokens} / {HARD_LIMIT} tokens). The chat is getting long. Consider clearing history soon to maintain performance!")
+        
     # 2. Safe Sidebar Controls & Memory Monitor
     st.sidebar.title("⚙️ Session Info")
     st.sidebar.success(f"**Active AI:**\n{selected_model_name}")
     
     # --- NEW: Visual Memory Monitor ---
     st.sidebar.markdown("### 📊 Memory Monitor")
-    usage_percent = min(st.session_state.total_tokens / MAX_CONTEXT_TOKENS, 1.0)
-    st.sidebar.progress(usage_percent, text=f"Context: {st.session_state.total_tokens} / {MAX_CONTEXT_TOKENS} tokens")
+    
+    # Calculate percentage based on the Hard Limit (max 1.0 to avoid UI errors)
+    usage_percent = min(st.session_state.total_tokens / HARD_LIMIT, 1.0)
+    
+    # Dynamic status indicator
+    if st.session_state.total_tokens >= HARD_LIMIT:
+        status_text = "🔴 **Critical:** Limit Reached"
+    elif st.session_state.total_tokens >= SOFT_LIMIT:
+        status_text = "🟠 **Warning:** Soft Limit Exceeded"
+    else:
+        status_text = "🟢 **Status:** Healthy"
+        
+    st.sidebar.write(status_text)
+    st.sidebar.progress(usage_percent, text=f"Context: {st.session_state.total_tokens} / {HARD_LIMIT} tokens")
     
     if st.sidebar.button("🧹 Clear Chat History"):
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
@@ -120,13 +135,17 @@ elif st.session_state.app_stage == "chat":
             )
             
             def stream_parser():
-                for response in stream_generate(
-                    model, 
-                    tokenizer, 
-                    formatted_prompt, 
-                    max_tokens=2000
-                ):
-                    yield response.text.replace("<|im_end|>", "")
+                try:
+                    for response in stream_generate(
+                        model, 
+                        tokenizer, 
+                        formatted_prompt, 
+                        max_tokens=2000
+                    ):
+                        yield response.text.replace("<|im_end|>", "")
+                except Exception as e:
+                    st.error(f"Failed to generate response: {e}")
+                    st.stop()
             
             full_response = st.write_stream(stream_parser())
             
