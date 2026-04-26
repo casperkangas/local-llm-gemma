@@ -61,7 +61,6 @@ elif st.session_state.app_stage == "chat":
     # OPTIMIZATION: Instant Chat Reset
     if st.sidebar.button("🧹 Clear Chat History"):
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
-        st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
         st.rerun()
     
     # A safe kill-switch that completely wipes the memory and sends you back to Stage 1
@@ -78,7 +77,6 @@ elif st.session_state.app_stage == "chat":
 
     # 3. Initialize Chat Memory (Only happens once per session)
     if "messages" not in st.session_state:
-        st.session_state.prompt_cache = make_prompt_cache(model, max_kv_size=8192)
         st.session_state.messages = [{"role": "system", "content": config["system_prompt"]}]
 
     # 4. Display the Conversation History
@@ -106,8 +104,7 @@ elif st.session_state.app_stage == "chat":
                     model, 
                     tokenizer, 
                     formatted_prompt, 
-                    max_tokens=2000, 
-                    prompt_cache=st.session_state.prompt_cache
+                    max_tokens=2000
                 ):
                     yield response.text.replace("<|im_end|>", "")
             
